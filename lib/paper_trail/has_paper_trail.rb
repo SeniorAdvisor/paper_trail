@@ -377,12 +377,30 @@ module PaperTrail
 
       # saves associations if the join table for `VersionAssociation` exists
       def save_associations(version)
+        if self.class.paper_trail_options[:belongs_to].present?
+          save_belongs_to_associations(version, self.class.paper_trail_options[:belongs_to])
+          return
+        end
         return unless PaperTrail.config.track_associations?
+        save_belongs_to_associations(version)
+      end
+
+      def match_association_name(associations, assoc)
+        return true if associations.blank?
+        associations.each do |a|
+          return true if a.is_a?(::Symbol) && (a == assoc.name)
+          return true if a.is_a?(::Hash) and a[:name] == assoc.name
+        end
+        return false
+      end
+
+      def save_belongs_to_associations(version,associations=nil)
         self.class.reflect_on_all_associations(:belongs_to).each do |assoc|
           assoc_version_args = {
               :version_id => version.id,
               :foreign_key_name => assoc.foreign_key
           }
+          next unless match_association_name(associations, assoc)
 
           if assoc.options[:polymorphic]
             associated_record = send(assoc.name) if send(assoc.foreign_type)
