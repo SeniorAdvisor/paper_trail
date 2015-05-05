@@ -7,7 +7,7 @@ module PaperTrail
     included do
       belongs_to :version
 
-      attr_accessible :version_id, :foreign_key_name, :foreign_key_id if PaperTrail.active_record_protected_attributes?
+      attr_accessible :version_id, :foreign_key_name, :foreign_key_id, :association_type, :foreign_type if PaperTrail.active_record_protected_attributes?
     end
   end
 end

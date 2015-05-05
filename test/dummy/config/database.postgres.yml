@@ -1,7 +1,7 @@
 test: &test
   adapter: postgresql
   database: paper_trail_test
-  username: postgres
+  username: kevin
   password: 
   host:     localhost
   port:     5432

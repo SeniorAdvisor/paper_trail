@@ -11,9 +11,9 @@ module PaperTrail
       # association when the test suite is running. This makes it pass
       # when DB is not initialized prior to test runs such as when we run on
       # Travis CI (there won't be a db in `test/dummy/db/`)
-      if PaperTrail.config.track_associations?
+      #if PaperTrail.config.track_associations?
         has_many :version_associations, :dependent => :destroy
-      end
+      #end
 
       validates_presence_of :event
 

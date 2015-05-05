@@ -377,24 +377,96 @@ module PaperTrail
 
       # saves associations if the join table for `VersionAssociation` exists
       def save_associations(version)
+        flag = false
+        [:belongs_to, :has_many, :has_one].each do |association_type|
+          if self.class.paper_trail_options[association_type].present?
+            flag = true
+            save_associations_by_type(association_type, version, self.class.paper_trail_options[association_type])
+          end
+        end
+        return if flag # skip default associations tack, if we defined any custom associations,
         return unless PaperTrail.config.track_associations?
+        [:belongs_to, :has_many, :has_one].each do |association_type|
+          save_associations_by_type(association_type, version)
+        end
+      end
+
+      def match_association_name(associations, assoc)
+        return false if associations.blank?
+        associations.each do |a|
+          return a if a.is_a?(::Symbol) && (a == assoc.name)
+          return a if a.is_a?(::Hash) and a[:name] == assoc.name
+        end
+        return false
+      end
+
+      def save_has_many_associations(version,associations=nil)
+        self.class.reflect_on_all_associations(:has_many).each do |assoc|
+          assoc_version_args = {
+            :version_id => version.id,
+            :foreign_type => assoc.klass.name,
+            :association_type => :has_many
+          }
+          if (matched_association = match_association_name(associations, assoc)) || associations.blank?
+            #do not need care :througth, the code support it.
+            #do we need code to support :as
+            associated_record = nil
+            associated_record = assoc.klass if send(assoc.name)
+            if associated_record && (assoc.klass.paper_trail_enabled_for_model? || matched_association)
+              send(assoc.name).each do |r|
+                PaperTrail::VersionAssociation.create_version_associations_and_versions(assoc_version_args.merge({:foreign_key_id => r.id, :foreign_key_name => associated_record.primary_key }), r, matched_association) if r && (r.changed? || r.new_record?)
+              end
+            end
+          end
+        end
+      end
+
+      def save_has_one_associations(version,associations=nil)
+        self.class.reflect_on_all_associations(:has_one).each do |assoc|
+          assoc_version_args = {
+            :version_id => version.id,
+            :foreign_type => assoc.klass.name,
+            :association_type => :has_one
+          }
+          if (matched_association = match_association_name(associations, assoc)) || associations.blank?
+            #do not need care :througth, the code support it.
+            associated_record = nil
+            associated_record = assoc.klass if send(assoc.name)
+            if associated_record && (assoc.klass.paper_trail_enabled_for_model? || matched_association)
+              r = send(assoc.name)
+              PaperTrail::VersionAssociation.create_version_associations_and_versions(assoc_version_args.merge({:foreign_key_id => r.id, :foreign_key_name => associated_record.primary_key }), r, matched_association) if r && (r.changed? || r.new_record?)
+            end
+          end
+        end
+      end
+
+      def save_belongs_to_associations(version,associations=nil)
         self.class.reflect_on_all_associations(:belongs_to).each do |assoc|
           assoc_version_args = {
-              :version_id => version.id,
-              :foreign_key_name => assoc.foreign_key
+            :version_id => version.id,
+            :foreign_key_name => assoc.foreign_key,
+            :foreign_type => assoc.klass.name,
+            :association_type => :belongs_to
           }
-
-          if assoc.options[:polymorphic]
-            associated_record = send(assoc.name) if send(assoc.foreign_type)
-            if associated_record && associated_record.class.paper_trail_enabled_for_model?
-              assoc_version_args.merge!(:foreign_key_id => associated_record.id)
+          if (matched_association = match_association_name(associations, assoc)) || associations.blank?
+            if assoc.options[:polymorphic]
+              associated_record = nil
+              associated_record = send(assoc.name) if send(assoc.foreign_type)
+              if associated_record && (associated_record.class.paper_trail_enabled_for_model? || matched_association)
+                assoc_version_args.merge!(:foreign_key_id => associated_record.id)
+              end
+            elsif assoc.klass.paper_trail_enabled_for_model? || matched_association
+              assoc_version_args.merge!(:foreign_key_id => send(assoc.foreign_key))
             end
-          elsif assoc.klass.paper_trail_enabled_for_model?
-            assoc_version_args.merge!(:foreign_key_id => send(assoc.foreign_key))
-          end
+            r = send(assoc.name)
+            PaperTrail::VersionAssociation.create_version_associations_and_versions(assoc_version_args, r, matched_association) if assoc_version_args.has_key?(:foreign_key_id) && r && ( r.changed? || r.new_record?)
 
-          PaperTrail::VersionAssociation.create(assoc_version_args) if assoc_version_args.has_key?(:foreign_key_id)
+          end
         end
+      end
+
+      def save_associations_by_type(association_type,version,associations=nil)
+        send("save_#{association_type}_associations", version, associations);
       end
 
       def set_transaction_id(version)
